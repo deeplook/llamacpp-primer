@@ -1,5 +1,8 @@
 # llama.cpp Primer
 
+[![CI](https://github.com/deeplook/primer-llamacpp/actions/workflows/ci.yml/badge.svg)](https://github.com/deeplook/primer-llamacpp/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/deeplook/primer-llamacpp?logo=github)](LICENSE)
+
 Small executable lessons for running and serving LLMs locally with llama.cpp.
 It complements `openai-primer` and `agents-primer`: those talk to a hosted API;
 this one runs models on your own machine — CLI, server, GGUF files,
@@ -7,8 +10,34 @@ quantization, constrained output, tools, and embeddings.
 
 llama.cpp is the C/C++ inference engine behind Ollama and LM Studio. On macOS
 it uses Metal for Apple Silicon GPUs; on Linux and Windows it targets CUDA or
-CPU. The lessons are mostly Python via `llama-cpp-python`, with a few shell
-examples for the CLI and server binaries.
+CPU. The lessons are mostly Python, with a few shell examples for the CLI and
+server binaries. A mock OpenAI-compatible server in `tools/` lets the networked
+examples run in CI without any model file or GPU.
+
+The approach is bottom-up: start with binaries and a first prompt, then layer
+on chat templates, sampling, streaming, and server mode. From there it moves
+into the GGUF toolchain — inspection, conversion, quantization — then
+constrained output via grammars and JSON schemas, function calling, embeddings,
+and a local RAG pipeline. The capstone composes server, tools, grammar, and
+RAG into one workflow. An appendix covers performance flags that are config
+knowledge rather than teachable spikes.
+
+Examples that need a GGUF skip cleanly when the file is missing, so the test
+suite stays offline and free. On a Mac with Ollama installed, `make list-models`
+discovers existing blobs automatically.
+
+## Setup
+
+```bash
+uv sync --all-groups
+# optional: download a small GGUF, e.g. TinyLlama Q4_K_M from Hugging Face
+llama-server --model models/tinyllama.Q4_K_M.gguf --port 8080
+uv run python examples/06_server_basic.py
+```
+
+`make setup` checks for `llama-server` and `llama-cli` on PATH and warns if
+they're absent — fine for CI, required for the live examples. `make check-all`
+runs formatting, the mock-backed smoke tests, and PyTest.
 
 ## Planned modules
 
@@ -40,21 +69,21 @@ examples for the CLI and server binaries.
 Not full lessons — short notes on speculative decoding, KV cache quantization,
 flash attention, and batch sizing. Config knowledge, not teachable spikes.
 
-## Setup (planned)
+## Not covered
 
-```bash
-uv sync --all-groups
-# download a small GGUF, e.g. TinyLlama Q4_K_M from Hugging Face
-llama-server --model models/tinyllama.Q4_K_M.gguf --port 8080
-uv run python examples/06_server_basic.py
-```
+This primer focuses on single-node, single-model inference with llama.cpp.
+Things outside that scope:
 
-Examples that need a model file will skip cleanly when it is missing, so the
-test suite stays offline and free.
+- **Distributed serving** — tensor parallelism, pipeline parallelism, or
+  multi-node setups. Those belong to vLLM or TensorRT-LLM territory.
+- **Fine-tuning** — llama.cpp has limited LoRA support; for training see
+  Axolotl or Unsloth.
+- **Audio and speech** — no STT/TTS pipelines here; audio I/O is orthogonal
+  to the inference patterns this primer teaches.
 
 ## Further reading
 
 - [llama.cpp GitHub](https://github.com/ggml-org/llama.cpp)
 - [llama-server docs](https://github.com/ggml-org/llama.cpp/tree/master/examples/server)
-- [GGUF format spec](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md)
+- [GGUF format spec](https://github.com/ggml/ggml/blob/master/docs/gguf.md)
 - [llama-cpp-python](https://github.com/abetlen/llama-cpp-python)
