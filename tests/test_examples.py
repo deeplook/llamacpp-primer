@@ -64,6 +64,53 @@ def test_first_prompt_runs():
     assert "France" in result.stdout or len(result.stdout.strip()) > 0
 
 
+@requires_gguf
+def test_gguf_inspect_runs():
+    result = subprocess.run(
+        [sys.executable, str(EXAMPLES / "08_gguf_inspect.py")],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "context_length" in result.stdout or "GGUF" in result.stdout
+
+
+@requires_gguf
+def test_python_bindings_runs():
+    result = subprocess.run(
+        [sys.executable, str(EXAMPLES / "16_python_bindings.py")],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@requires_gguf
+def test_context_window_runs():
+    result = subprocess.run(
+        [sys.executable, str(EXAMPLES / "17_context_window.py")],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "context_length" in result.stdout
+
+
+@requires_gguf
+ def test_capstone_syntax():
+    """Capstone needs a live server and vision model; just verify it imports."""
+    result = subprocess.run(
+        [sys.executable, "-m", "py_compile", str(EXAMPLES / "20_capstone.py")],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_mock_server_models():
     proc = subprocess.Popen(
         [sys.executable, str(ROOT / "tools" / "mock_server.py")],
@@ -117,3 +164,15 @@ def test_mock_server_chat():
     finally:
         proc.terminate()
         proc.wait(timeout=5)
+
+
+def test_all_examples_are_valid_python():
+    """Every example file compiles."""
+    for path in sorted(EXAMPLES.glob("*.py")):
+        result = subprocess.run(
+            [sys.executable, "-m", "py_compile", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"{path.name}: {result.stderr}"
