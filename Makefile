@@ -8,11 +8,9 @@ help: ## Show this help
 setup: check-binaries ## Verify llama.cpp binaries are on PATH
 	@echo "Setup complete."
 
-check-binaries: ## Check for llama-server and llama-cli
-	@command -v llama-server >/dev/null 2>&1 || { echo "llama-server not found. Run: brew install llama.cpp"; exit 1; }
-	@command -v llama-cli >/dev/null 2>&1 || { echo "llama-cli not found. Run: brew install llama.cpp"; exit 1; }
-	@echo "llama-server: $$(llama-server --version 2>&1 | head -1)"
-	@echo "llama-cli:    $$(llama-cli --version 2>&1 | head -1)"
+check-binaries: ## Check for llama-server and llama-cli (warns only)
+	@command -v llama-server >/dev/null 2>&1 && echo "llama-server: $$(llama-server --version 2>&1 | head -1)" || echo "llama-server not found (ok in CI, run: brew install llama.cpp)"
+	@command -v llama-cli >/dev/null 2>&1 && echo "llama-cli:    $$(llama-cli --version 2>&1 | head -1)" || echo "llama-cli not found (ok in CI, run: brew install llama.cpp)"
 
 list-models: ## List GGUF models found via Ollama
 	@python3 tools/list_ollama_models.py
