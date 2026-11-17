@@ -1,6 +1,8 @@
 .DEFAULT_GOAL := help
 
-.phony: help setup check-binaries list-models live-core
+EXAMPLE ?= examples/01_build_install.py
+
+.phony: help setup check-binaries list-models live-core run
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -14,6 +16,13 @@ check-binaries: ## Check for llama-server and llama-cli (warns only)
 
 list-models: ## List GGUF models found via Ollama
 	@python3 tools/list_ollama_models.py
+
+run: ## Run one example (EXAMPLE=examples/07_server_python.py); Python via uv, Bash directly
+	@case "$(EXAMPLE)" in \
+		*.py) uv run python $(EXAMPLE) ;; \
+		*.sh) bash $(EXAMPLE) ;; \
+		*) echo "Unknown extension in $(EXAMPLE)"; exit 1 ;; \
+	esac
 
 live-core: ## Run GGUF-dependent examples against a real llama-server (Mac only)
 	@echo "Requires llama-server on PATH and a GGUF (see: make list-models)"
