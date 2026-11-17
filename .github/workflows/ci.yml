@@ -31,11 +31,5 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-groups
 
-      - name: Cache GGUF models
-        uses: actions/cache@v4
-        with:
-          path: ~/.ollama/models/blobs
-          key: ollama-blobs-v1
-
       - name: Run PyTest
         run: uv run pytest -v
