@@ -39,7 +39,7 @@ uv run python examples/06_server_basic.py
 they're absent — fine for CI, required for the live examples. `make check-all`
 runs formatting, the mock-backed smoke tests, and PyTest.
 
-## Planned modules
+## Modules
 
 | File | Topic |
 |---|---|
@@ -51,13 +51,13 @@ runs formatting, the mock-backed smoke tests, and PyTest.
 | `06_server_basic.py` | Start `llama-server` and call its OpenAI-compatible endpoint |
 | `07_server_python.py` | Talk to `llama-server` from Python with the OpenAI SDK |
 | `08_gguf_inspect.py` | Read GGUF metadata: architecture, context length, quantization |
-| `09_convert_hf.py` | Convert a Hugging Face model to GGUF |
-| `10_quantize.py` | Quantize a GGUF from F16 to Q4_K_M and compare size/quality |
-| `11_grammar_json.py` | Constrain output to valid JSON with a grammar |
+| `09_gguf_conversion.py` | Convert a Hugging Face model to GGUF |
+| `10_quantization.py` | Quantize a GGUF from F16 to Q4_K_M and compare size/quality |
+| `11_grammar.py` | Constrain output to valid JSON with a grammar |
 | `12_json_schema.py` | Grammar from a JSON Schema for structured output |
 | `13_function_calling.py` | Define tools, parse model-emitted calls, return results |
 | `14_embeddings.py` | Embed texts and compute cosine similarity |
-| `15_rag_local.py` | Local RAG: embed a corpus, retrieve top-k, generate grounded |
+| `15_local_rag.py` | Local RAG: embed a corpus, retrieve top-k, generate grounded |
 | `16_python_bindings.py` | llama-cpp-python: model options, batching, callbacks |
 | `17_context_window.py` | Context length, KV cache, and what happens when it fills |
 | `18_prompt_cache.py` | Reuse a stable prompt prefix across generations |
@@ -66,8 +66,20 @@ runs formatting, the mock-backed smoke tests, and PyTest.
 
 ## Appendix: performance flags
 
-Not full lessons — short notes on speculative decoding, KV cache quantization,
-flash attention, and batch sizing. Config knowledge, not teachable spikes.
+Short notes, not full lessons:
+
+- **Speculative decoding** — run a small draft model alongside the main one;
+  accepted tokens skip the big forward pass. Flag: `--draft` / draft model path.
+  Biggest win on long generations; negligible on short ones.
+- **KV cache quantization** — store the cache at Q8_0 instead of F16. Roughly
+  halves cache memory with minimal quality loss. Flag: `--cache-type-k q8_0
+  --cache-type-v q8_0`.
+- **Flash attention** — `-fa` enables memory-efficient attention. On Apple
+  Silicon with Metal it's usually on by default for supported models; on CUDA
+  it's a clear win for long contexts.
+- **Batch sizing** — `--batch` and `--ubatch` control how many tokens process
+  per step. Larger batches improve throughput on GPU but raise peak memory.
+  For interactive chat, small batches with low latency matter more.
 
 ## Not covered
 
