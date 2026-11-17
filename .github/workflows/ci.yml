@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run Bash smoke tests
+      - name: Run Bash smoke tests (mock server)
         run: bash tools/test.sh
 
   pytest:
