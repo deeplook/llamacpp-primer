@@ -12,17 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake
-
-      - name: Build llama.cpp (CPU, server enabled)
-        run: |
-          git clone --depth 1 https://github.com/ggml-org/llama.cpp.git
-          cd llama.cpp
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLAMA_BUILD_SERVER=ON -DLLAMA_BLAS=OFF
-          cmake --build build --config Release -j $(nproc)
-          echo "$(pwd)/build/bin" >> $GITHUB_PATH
-
       - name: Run Bash smoke tests
         run: bash tools/test.sh
 
