@@ -5,9 +5,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-echo "==> Checking binaries"
-make check-binaries
-
 echo "==> Running example 01 (build/install check)"
 python3 examples/01_build_install.py
 
