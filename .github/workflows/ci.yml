@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install llama.cpp (CPU binary)
+        run: |
+          # Grab a prebuilt CPU binary instead of compiling
+          curl -sL https://github.com/ggml-org/llama.cpp/releases/latest/download/llama-cpu-x64.tar.zst -o llama.tar.zst || true
+          if [ -f llama.tar.zst ]; then
+            tar -I zstd -xf llama.tar.zst
+            echo "$(pwd)" >> $GITHUB_PATH
+          fi
+
+      - name: Run Bash smoke tests
+        run: bash tools/test.sh
+
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Cache GGUF models
+        uses: actions/cache@v4
+        with:
+          path: ~/.ollama/models/blobs
+          key: ollama-blobs-v1
+
+      - name: Run PyTest
+        run: uv run pytest -v
