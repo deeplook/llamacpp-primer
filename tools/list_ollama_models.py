@@ -4,16 +4,16 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 OLLAMA_DIR = Path.home() / ".ollama" / "models"
 BLOBS_DIR = OLLAMA_DIR / "blobs"
 
 
-def run_ollama_list() -> list[dict]:
+def run_ollama_list() -> list[dict[str, Any]]:
     try:
         result = subprocess.run(
             ["ollama", "list", "--format", "json"],
@@ -67,7 +67,9 @@ def main() -> None:
         blob = digest_to_blob(digest)
         status = "OK" if blob else "blob missing"
         size_mb = size / (1024 * 1024) if size else 0
-        print(f"{name:<30} {size_mb:>9.0f}MB {str(blob.name) if blob else '-':<20} {status}")
+        print(
+            f"{name:<30} {size_mb:>9.0f}MB {str(blob.name) if blob else '-':<20} {status}"
+        )
 
 
 if __name__ == "__main__":

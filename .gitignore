@@ -6,9 +6,6 @@ __pycache__/
 dist/
 build/
 
-# uv
-.python-version
-
 # Models (too large for git)
 models/
 *.gguf

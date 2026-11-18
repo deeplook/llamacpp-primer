@@ -1,94 +1,58 @@
 #!/usr/bin/env python3
-"""Example 17: Context window, KV cache, and overflow behavior.
+"""Lesson 17: Context window, KV cache, and overflow behavior.
 
-Reads n_ctx from the GGUF metadata, fills the context with repeated
-prompts until generation degrades, and shows what llama.cpp does when
-the window is exceeded (truncation vs error depending on settings).
-Skips without a GGUF.
+Reads the trained context length from the GGUF header, then starts
+llama-server with a deliberately tiny --ctx-size and sends a prompt that
+does not fit, to show the server rejecting it. Skips without a GGUF.
 """
-import struct
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+from __future__ import annotations
 
+import sys
+import urllib.error
 
-def read_gguf_ctx(path):
-    """Minimal GGUF reader: grab general.context_length from the KV section."""
-    with open(path, "rb") as f:
-        magic = f.read(4)
-        if magic != b"GGUF":
-            return None
-        version = struct.unpack("<I", f.read(4))[0]
-        n_tensors, n_kv = struct.unpack("<QQ", f.read(16))
-        # Skip tensor info
-        for _ in range(n_tensors):
-            nlen = struct.unpack("<Q", f.read(8))[0]
-            f.read(nlen)
-            f.read(32)  # type + dims
-            f.read(8)   # offset
-        for _ in range(n_kv):
-            nlen = struct.unpack("<Q", f.read(8))[0]
-            key = f.read(nlen).decode("utf-8", errors="ignore")
-            vtype = struct.unpack("<I", f.read(4))[0]
-            if vtype == 4:  # uint32
-                val = struct.unpack("<I", f.read(4))[0]
-            elif vtype == 5:  # int32
-                val = struct.unpack("<i", f.read(4))[0]
-            elif vtype == 6:  # float32
-                val = struct.unpack("<f", f.read(4))[0]
-            elif vtype == 8:  # uint64
-                val = struct.unpack("<Q", f.read(8))[0]
-            elif vtype == 9:  # int64
-                val = struct.unpack("<q", f.read(8))[0]
-            elif vtype == 10:  # double
-                val = struct.unpack("<d", f.read(8))[0]
-            elif vtype == 7:  # bool
-                val = bool(struct.unpack("<B", f.read(1))[0])
-            else:
-                # string or array — skip by reading length-prefixed blob
-                if vtype == 8:
-                    pass
-                slen = struct.unpack("<Q", f.read(8))[0]
-                f.read(slen)
-                continue
-            if key == "general.context_length":
-                return val
-    return None
+from _common import (
+    context_length,
+    http_json,
+    llama_server,
+    read_gguf_metadata,
+    require_binary,
+    require_gguf,
+)
+
+PORT = 18088
+SMALL_CTX = 256
 
 
-def find_gguf():
-    models = ROOT / "models"
-    if not models.exists():
-        return None
-    ggufs = sorted(models.glob("*.gguf"))
-    return next((g for g in ggufs if "embed" not in g.name.lower()), None)
-
-
-def main():
-    path = find_gguf()
+def main() -> None:
+    path = require_gguf()
     if path is None:
-        print("SKIP: no GGUF found. Run examples 09/10 first.")
-        return 0
+        sys.exit(0)
 
-    ctx = read_gguf_ctx(path)
-    print(f"{path.name}: general.context_length = {ctx}")
-    if ctx is None:
-        print("Could not read context length from GGUF header.")
-        return 0
+    ctx = context_length(read_gguf_metadata(path))
+    print(f"{path.name}: trained context length = {ctx} tokens")
+    print("The KV cache grows with the context actually in use, so a longer")
+    print("--ctx-size costs memory even when most of it stays empty.")
+    if require_binary("llama-server") is None:
+        sys.exit(0)
 
-    # Demonstrate the concept with llama-server if available
-    import shutil
-    if shutil.which("llama-server") is None:
-        print("llama-server not on PATH; header read is all we can show.")
-        return 0
-
-    print(f"\nContext of {ctx} tokens means the KV cache holds that many."
-          f"\nOnce filled, older tokens get dropped (default) or the"
-          f"\nrequest errors if --ctx-size is set below the prompt length."
-          f"\nTry: llama-server --model {path.name} --ctx-size 256"
-          f"\nwith a prompt longer than 256 tokens and watch it fail.")
-    return 0
+    with llama_server(path, PORT, "--ctx-size", str(SMALL_CTX), "-ngl", "99") as base:
+        long_prompt = "The history of computing begins with calculators. " * 100
+        try:
+            http_json(
+                f"{base}/v1/chat/completions",
+                {
+                    "model": path.name,
+                    "messages": [{"role": "user", "content": long_prompt}],
+                    "max_tokens": 8,
+                },
+            )
+            print("Server accepted the prompt (it may have truncated it).")
+        except urllib.error.HTTPError as err:
+            print(
+                f"--ctx-size {SMALL_CTX}: server rejected the long prompt ({err.code})."
+            )
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

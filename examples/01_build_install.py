@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 
 
 def check_binary(name: str) -> str | None:
@@ -33,7 +32,7 @@ def main() -> None:
             print(f"  [OK] {binary}: {info}")
         else:
             print(f"  [MISSING] {binary}")
-            print(f"           Install with: brew install llama.cpp")
+            print("           Install with: brew install llama.cpp")
 
     print()
     # Probe compile-time backend support via llama-server --help text

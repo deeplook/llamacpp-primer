@@ -1,63 +1,57 @@
 #!/usr/bin/env python3
-"""Example 16: llama-cpp-python — direct model access without a server.
+"""Lesson 16: llama-cpp-python, direct model access without a server.
 
-Loads a GGUF with Llama(), generates with n_predict, and shows batching
-plus a token callback. Skips without llama-cpp-python or a GGUF.
+Loads a GGUF with Llama(), generates a completion, then streams tokens
+to show per-token access. Skips without llama-cpp-python or a GGUF.
 """
-import shutil
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+from __future__ import annotations
 
+import sys
+from collections.abc import Iterator
+from typing import Any, cast
 
-def find_gguf():
-    models = ROOT / "models"
-    if not models.exists():
-        return None
-    ggufs = sorted(models.glob("*.gguf"))
-    return next((g for g in ggufs if "embed" not in g.name.lower()), None)
+from _common import require_gguf
 
 
-def main():
+def main() -> None:
     try:
         from llama_cpp import Llama
     except ImportError:
-        print("SKIP: llama-cpp-python not installed. uv sync --all-groups")
-        return 0
+        print("SKIP: llama-cpp-python not installed. Run: uv sync --all-groups")
+        sys.exit(0)
 
-    path = find_gguf()
+    path = require_gguf()
     if path is None:
-        print("SKIP: no GGUF found. Run examples 09/10 first.")
-        return 0
+        sys.exit(0)
 
-    llm = Llama(model_path=str(path), n_ctx=512, verbose=False)
-    out = llm.create_completion(
-        "The capital of France is",
-        max_tokens=16,
-        temperature=0.2,
+    llm = Llama(model_path=str(path), n_ctx=512, n_gpu_layers=-1, verbose=False)
+    out = cast(
+        dict[str, Any],
+        llm.create_completion(
+            "The capital of France is", max_tokens=16, temperature=0.2
+        ),
     )
     print("Completion:", out["choices"][0]["text"].strip())
 
-    # Batching: multiple prompts in one call
-    batch = llm.create_completion(
-        ["Say hi in German.", "Say hi in French."],
-        max_tokens=8,
-        temperature=0.0,
-    )
-    for i, choice in enumerate(batch["choices"]):
-        print(f"Batch {i}:", choice["text"].strip())
+    # Tokenizer round-trip
+    text = b"Hello, llama.cpp!"
+    ids = llm.tokenize(text, add_bos=False)
+    print(f"Tokens ({len(ids)}):", ids)
+    back = llm.detokenize(ids)
+    print("Detokenized:", back.decode())
+    assert back == text, f"round trip changed the text: {back!r}"
 
-    # Token callback for streaming-like visibility
-    tokens = []
-    llm.create_completion(
-        "Count to five:",
-        max_tokens=16,
-        temperature=0.0,
-        callback=lambda t: tokens.append(t),
+    # Per-token streaming
+    stream = cast(
+        Iterator[dict[str, Any]],
+        llm.create_completion(
+            "Count to five:", max_tokens=16, temperature=0.0, stream=True
+        ),
     )
-    print("Callback tokens:", tokens)
-    return 0
+    pieces = [chunk["choices"][0]["text"] for chunk in stream]
+    print("Streamed pieces:", pieces)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

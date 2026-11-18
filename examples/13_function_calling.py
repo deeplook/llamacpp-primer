@@ -1,113 +1,86 @@
 #!/usr/bin/env python3
-"""Example 13: Function calling with the tools API.
+"""Lesson 13: Function calling with the tools API.
 
-llama-server supports OpenAI-style tool definitions. The model returns
-a tool call instead of text; you execute it and feed the result back.
-Skips without a GGUF or llama-server binary.
+llama-server supports OpenAI-style tool definitions when started with
+--jinja. The model returns a tool call instead of text; you execute it and
+feed the result back. Skips without a GGUF or llama-server binary.
 """
+
+from __future__ import annotations
+
 import json
-import shutil
-import subprocess
 import sys
-import time
-import urllib.request
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+from _common import http_json, llama_server, require_binary, require_gguf
 
-TOOLS = [{
-    "type": "function",
-    "function": {
-        "name": "get_weather",
-        "description": "Get current weather for a city.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "city": {"type": "string"}
+PORT = 18082
+
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get current weather for a city.",
+            "parameters": {
+                "type": "object",
+                "properties": {"city": {"type": "string"}},
+                "required": ["city"],
             },
-            "required": ["city"]
-        }
+        },
     }
-}]
+]
 
 
-def find_gguf():
-    for name in ("tinyllama-1.1b-chat-q4_k_m.gguf", "tinyllama-1.1b-chat-f16.gguf"):
-        p = ROOT / "models" / name
-        if p.exists():
-            return p
-    return None
-
-
-def main():
-    if shutil.which("llama-server") is None:
-        print("SKIP: llama-server not on PATH.")
-        return 0
-    path = find_gguf()
+def main() -> None:
+    if require_binary("llama-server") is None:
+        sys.exit(0)
+    path = require_gguf()
     if path is None:
-        print("SKIP: no GGUF found. Run examples 09/10 first.")
-        return 0
+        sys.exit(0)
 
-    proc = subprocess.Popen(
-        ["llama-server", "--model", str(path), "--port", "18082", "--ctx-size", "1024"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
-    try:
-        for _ in range(60):
-            try:
-                urllib.request.urlopen("http://127.0.0.1:18082/v1/models", timeout=1)
-                break
-            except Exception:
-                time.sleep(1)
-        else:
-            raise RuntimeError("server did not start")
-
-        req = urllib.request.Request(
-            "http://127.0.0.1:18082/v1/chat/completions",
-            data=json.dumps({
+    question = {"role": "user", "content": "What's the weather in Berlin?"}
+    with llama_server(
+        path, PORT, "--ctx-size", "1024", "--jinja", "-ngl", "99"
+    ) as base:
+        url = f"{base}/v1/chat/completions"
+        body = http_json(
+            url,
+            {
                 "model": path.name,
-                "messages": [{"role": "user", "content": "What's the weather in Berlin?"}],
+                "messages": [question],
                 "tools": TOOLS,
                 "max_tokens": 128,
-            }).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
+            },
         )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            body = json.load(resp)
         msg = body["choices"][0]["message"]
         print("Assistant message:", json.dumps(msg, indent=2))
-        if msg.get("tool_calls"):
-            tc = msg["tool_calls"][0]
-            args = json.loads(tc["function"]["arguments"])
-            print(f"Tool call: {tc['function']['name']}({args})")
-            # Simulate tool execution and send result back
-            result = {"city": args["city"], "temp_c": 18, "condition": "cloudy"}
-            req2 = urllib.request.Request(
-                "http://127.0.0.1:18082/v1/chat/completions",
-                data=json.dumps({
-                    "model": path.name,
-                    "messages": [
-                        {"role": "user", "content": "What's the weather in Berlin?"},
-                        msg,
-                        {"role": "tool", "tool_call_id": tc["id"],
-                         "content": json.dumps(result)},
-                    ],
-                    "max_tokens": 128,
-                }).encode(),
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req2, timeout=60) as resp:
-                body2 = json.load(resp)
-            print("Final answer:", body2["choices"][0]["message"]["content"])
-        else:
-            print("No tool call returned (model may not support tools well).")
-    finally:
-        proc.terminate()
-        proc.wait(timeout=10)
-    return 0
+        if not msg.get("tool_calls"):
+            print("No tool call returned (a small model may not support tools well).")
+            return
+
+        tc = msg["tool_calls"][0]
+        args = json.loads(tc["function"]["arguments"])
+        print(f"Tool call: {tc['function']['name']}({args})")
+        # Simulate tool execution and send the result back
+        result = {"city": args["city"], "temp_c": 18, "condition": "cloudy"}
+        body = http_json(
+            url,
+            {
+                "model": path.name,
+                "messages": [
+                    question,
+                    msg,
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.get("id", "call_0"),
+                        "content": json.dumps(result),
+                    },
+                ],
+                "max_tokens": 128,
+            },
+        )
+        print("Final answer:", body["choices"][0]["message"]["content"])
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

@@ -34,7 +34,14 @@ def main() -> None:
     if not server_up():
         print("No server on :8080. Starting mock server...")
         mock = subprocess.Popen(
-            [sys.executable, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "tools" / "mock_server.py")],
+            [
+                sys.executable,
+                str(
+                    __import__("pathlib").Path(__file__).resolve().parents[1]
+                    / "tools"
+                    / "mock_server.py"
+                ),
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )

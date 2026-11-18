@@ -1,73 +1,44 @@
 #!/usr/bin/env python3
-"""Example 14: Generate embeddings with llama-server's /v1/embeddings.
+"""Lesson 14: Generate embeddings with llama-server's /v1/embeddings.
 
-Requires a model built with embedding support (e.g. all-MiniLM or a
-nomic embed model in GGUF). Skips without a GGUF or server binary.
+Needs an embedding model in models/ with "embed" in its file name, e.g.
+nomic-embed-text-v1.5.Q4_K_M.gguf. Skips without one or without the server.
 """
-import json
-import shutil
-import subprocess
+
+from __future__ import annotations
+
+import math
 import sys
-import time
-import urllib.request
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+from _common import http_json, llama_server, require_binary, require_gguf
 
-
-def find_gguf():
-    models = ROOT / "models"
-    if not models.exists():
-        return None
-    # Prefer anything with 'embed' in the name, else first GGUF
-    ggufs = sorted(models.glob("*.gguf"))
-    for g in ggufs:
-        if "embed" in g.name.lower():
-            return g
-    return ggufs[0] if ggufs else None
+PORT = 18083
 
 
-def main():
-    if shutil.which("llama-server") is None:
-        print("SKIP: llama-server not on PATH.")
-        return 0
-    path = find_gguf()
+def cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    return dot / (math.hypot(*a) * math.hypot(*b))
+
+
+def main() -> None:
+    if require_binary("llama-server") is None:
+        sys.exit(0)
+    path = require_gguf(embedding=True)
     if path is None:
-        print("SKIP: no GGUF found in models/. "
-              "Download an embedding model, e.g. "
-              "nomic-embed-text-v1.5.Q4_K_M.gguf")
-        return 0
+        print("      e.g. download nomic-embed-text-v1.5.Q4_K_M.gguf into models/")
+        sys.exit(0)
 
-    proc = subprocess.Popen(
-        ["llama-server", "--model", str(path), "--port", "18083", "--ctx-size", "512", "--embedding"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
-    try:
-        for _ in range(60):
-            try:
-                urllib.request.urlopen("http://127.0.0.1:18083/v1/models", timeout=1)
-                break
-            except Exception:
-                time.sleep(1)
-        else:
-            raise RuntimeError("server did not start")
-
-        req = urllib.request.Request(
-            "http://127.0.0.1:18083/v1/embeddings",
-            data=json.dumps({"model": path.name, "input": "Hello world"}).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            body = json.load(resp)
-        emb = body["data"][0]["embedding"]
-        print(f"Embedding dim: {len(emb)}")
-        print(f"First 5 values: {emb[:5]}")
-    finally:
-        proc.terminate()
-        proc.wait(timeout=10)
-    return 0
+    texts = ["Hello world", "Hi there, world", "Quarterly tax filing deadlines"]
+    with llama_server(
+        path, PORT, "--ctx-size", "512", "--embedding", "-ngl", "99"
+    ) as base:
+        body = http_json(f"{base}/v1/embeddings", {"model": path.name, "input": texts})
+    vecs = [d["embedding"] for d in body["data"]]
+    print(f"Embedding dim: {len(vecs[0])}")
+    print(f"First 5 values: {vecs[0][:5]}")
+    print(f"cos(hello, hi)  = {cosine(vecs[0], vecs[1]):.3f}")
+    print(f"cos(hello, tax) = {cosine(vecs[0], vecs[2]):.3f}")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

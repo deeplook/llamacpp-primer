@@ -4,8 +4,7 @@
 Uses llama.cpp's convert_hf_to_gguf.py script. Requires the llama.cpp
 source tree (cloned during CI or present locally). Skips if no source tree.
 """
-import os
-import shutil
+
 import subprocess
 import sys
 from pathlib import Path
@@ -18,7 +17,7 @@ MODEL_ID = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 OUT_GGUF = OUT_DIR / "tinyllama-1.1b-chat-f16.gguf"
 
 
-def main():
+def main() -> int:
     if not CONVERTER.exists():
         print(f"SKIP: {CONVERTER} not found. Clone llama.cpp into the repo root.")
         return 0
@@ -29,10 +28,13 @@ def main():
         return 0
 
     cmd = [
-        sys.executable, str(CONVERTER),
+        sys.executable,
+        str(CONVERTER),
         MODEL_ID,
-        "--outdir", str(OUT_DIR),
-        "--outtype", "f16",
+        "--outdir",
+        str(OUT_DIR),
+        "--outtype",
+        "f16",
     ]
     print("Running:", " ".join(cmd))
     subprocess.run(cmd, check=True)

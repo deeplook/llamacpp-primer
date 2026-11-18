@@ -1,142 +1,104 @@
 #!/usr/bin/env python3
-"""Example 15: Minimal local RAG over a text file.
+"""Lesson 15: Minimal local RAG over a text file.
 
-Chunks a document, embeds each chunk, retrieves the best match for a
-query by cosine similarity, and asks the LLM to answer using it.
-Uses the mock server if no embedding model is available, falling back
-to a trivial keyword scorer so the pipeline is still demonstrable.
+Chunks a document, embeds each chunk, retrieves the best match for a query
+by cosine similarity, and asks the LLM to answer using it. Without an
+embedding model it falls back to bag-of-words vectors, so the pipeline is
+still demonstrable; without a chat GGUF the answer comes from the mock server.
 """
-import json
+
+from __future__ import annotations
+
 import math
 import re
-import shutil
-import subprocess
-import sys
-import time
-import urllib.request
-from pathlib import Path
+from collections.abc import Callable
 
-ROOT = Path(__file__).resolve().parents[1]
+from _common import (
+    ROOT,
+    find_gguf,
+    http_json,
+    llama_server,
+    mock_server,
+    require_binary,
+)
+
 DOC = ROOT / "README.md"
+EMBED_PORT = 18084
+CHAT_PORT = 18085
 
 
-def chunk_text(text, size=400, overlap=80):
-    chunks, start = [], 0
-    while start < len(text):
-        chunks.append(text[start:start + size])
-        start += size - overlap
+def chunk_text(text: str, size: int = 400, overlap: int = 80) -> list[str]:
+    chunks = [text[i : i + size] for i in range(0, len(text), size - overlap)]
     return [c for c in chunks if c.strip()]
 
 
-def cosine(a, b):
+def cosine(a: list[float], b: list[float]) -> float:
     dot = sum(x * y for x, y in zip(a, b))
-    na = math.sqrt(sum(x * x for x in a))
-    nb = math.sqrt(sum(x * x for x in b))
+    na, nb = math.hypot(*a), math.hypot(*b)
     return dot / (na * nb) if na and nb else 0.0
 
 
-def embed_texts(texts, port=18084):
-    """Try llama-server embeddings; fall back to bag-of-words vectors."""
-    if shutil.which("llama-server") is not None:
-        ggufs = sorted((ROOT / "models").glob("*.gguf")) if (ROOT / "models").exists() else []
-        embed_gguf = next((g for g in ggufs if "embed" in g.name.lower()), None)
-        if embed_gguf is not None:
-            proc = subprocess.Popen(
-                ["llama-server", "--model", str(embed_gguf), "--port", str(port),
-                 "--ctx-size", "512", "--embedding"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-            try:
-                for _ in range(60):
-                    try:
-                        urllib.request.urlopen(f"http://127.0.0.1:{port}/v1/models", timeout=1)
-                        break
-                    except Exception:
-                        time.sleep(1)
-                else:
-                    raise RuntimeError("embed server did not start")
-                out = []
-                for t in texts:
-                    req = urllib.request.Request(
-                        f"http://127.0.0.1:{port}/v1/embeddings",
-                        data=json.dumps({"model": embed_gguf.name, "input": t}).encode(),
-                        headers={"Content-Type": "application/json"}, method="POST",
-                    )
-                    with urllib.request.urlopen(req, timeout=60) as resp:
-                        out.append(json.load(resp)["data"][0]["embedding"])
-                return out
-            finally:
-                proc.terminate()
-                proc.wait(timeout=10)
-    # Fallback: simple token-frequency vectors over a shared vocab
-    vocab = sorted(set(re.findall(r"[a-zA-Z0-9_-]{3,}", " ".join(texts).lower())))
-    def vec(t):
-        toks = re.findall(r"[a-zA-Z0-9_-]{3,}", t.lower())
-        return [toks.count(v) for v in vocab]
-    return [vec(t) for t in texts]
+def bow_embed(texts: list[str]) -> list[list[float]]:
+    """Token-count vectors over a shared vocabulary (no model needed)."""
+
+    def tokenize(t: str) -> list[str]:
+        return re.findall(r"[a-zA-Z0-9_-]{3,}", t.lower())
+
+    vocab = sorted({tok for t in texts for tok in tokenize(t)})
+    return [[float(tokenize(t).count(v)) for v in vocab] for t in texts]
 
 
-def main():
-    if not DOC.exists():
-        print(f"SKIP: {DOC} not found")
-        return 0
+def retrieve(
+    chunks: list[str], query: str, embed: Callable[[list[str]], list[list[float]]]
+) -> tuple[float, int]:
+    """Return (score, index) of the chunk most similar to the query."""
+    vectors = embed(chunks + [query])
+    qvec = vectors[-1]
+    return max((cosine(qvec, v), i) for i, v in enumerate(vectors[:-1]))
+
+
+def embed_texts(texts: list[str]) -> list[list[float]]:
+    embed_gguf = find_gguf(embedding=True)
+    if embed_gguf is None or require_binary("llama-server") is None:
+        print("(no embedding model: using bag-of-words vectors)")
+        return bow_embed(texts)
+    with llama_server(
+        embed_gguf, EMBED_PORT, "--ctx-size", "512", "--embedding", "-ngl", "99"
+    ) as base:
+        body = http_json(
+            f"{base}/v1/embeddings", {"model": embed_gguf.name, "input": texts}
+        )
+    return [d["embedding"] for d in body["data"]]
+
+
+def main() -> None:
     text = DOC.read_text(errors="ignore")
     chunks = chunk_text(text)
     print(f"Chunked {DOC.name} into {len(chunks)} pieces")
     query = "What is this primer about?"
-    vectors = embed_texts(chunks + [query])
-    chunk_vecs, qvec = vectors[:-1], vectors[-1]
-    scored = sorted(((cosine(qvec, v), i) for i, v in enumerate(chunk_vecs)), reverse=True)
-    best_i = scored[0][1]
-    print(f"Best chunk (score {scored[0][0]:.3f}):\n{chunks[best_i][:300]}...\n")
-    # Ask the mock or real server to answer from the chunk
-    answer_prompt = (f"Answer using only this context:\n{chunks[best_i]}\n\nQuestion: {query}")
-    if shutil.which("llama-server") is not None:
-        ggufs = sorted((ROOT / "models").glob("*.gguf")) if (ROOT / "models").exists() else []
-        chat_gguf = next((g for g in ggufs if "embed" not in g.name.lower()), None)
-        if chat_gguf is not None:
-            proc = subprocess.Popen(
-                ["llama-server", "--model", str(chat_gguf), "--port", "18085", "--ctx-size", "1024"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-            try:
-                for _ in range(60):
-                    try:
-                        urllib.request.urlopen("http://127.0.0.1:18085/v1/models", timeout=1)
-                        break
-                    except Exception:
-                        time.sleep(1)
-                req = urllib.request.Request(
-                    "http://127.0.0.1:18085/v1/chat/completions",
-                    data=json.dumps({"model": chat_gguf.name,
-                                     "messages": [{"role": "user", "content": answer_prompt}],
-                                     "max_tokens": 128}).encode(),
-                    headers={"Content-Type": "application/json"}, method="POST",
-                )
-                with urllib.request.urlopen(req, timeout=60) as resp:
-                    print("LLM answer:", json.load(resp)["choices"][0]["message"]["content"])
-            finally:
-                proc.terminate()
-                proc.wait(timeout=10)
-            return 0
-    # Mock fallback
-    proc = subprocess.Popen([sys.executable, str(ROOT / "tools" / "mock_server.py")],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    try:
-        time.sleep(1)
-        req = urllib.request.Request(
-            "http://127.0.0.1:8080/v1/chat/completions",
-            data=json.dumps({"model": "mock-model",
-                             "messages": [{"role": "user", "content": answer_prompt}]}).encode(),
-            headers={"Content-Type": "application/json"}, method="POST",
+    score, best = retrieve(chunks, query, embed_texts)
+    print(f"Best chunk (score {score:.3f}):\n{chunks[best][:300]}...\n")
+
+    prompt = f"Answer using only this context:\n{chunks[best]}\n\nQuestion: {query}"
+    chat_gguf = find_gguf()
+    if chat_gguf is not None and require_binary("llama-server") is not None:
+        server = llama_server(chat_gguf, CHAT_PORT, "--ctx-size", "1024", "-ngl", "99")
+        label, model = "LLM answer", chat_gguf.name
+    else:
+        print("(no chat model: answering from the mock server)")
+        server = mock_server()
+        label, model = "Mock answer", "mock-model"
+    with server as base:
+        body = http_json(
+            f"{base}/v1/chat/completions",
+            {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 128,
+            },
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            print("Mock answer:", json.load(resp)["choices"][0]["message"]["content"])
-    finally:
-        proc.terminate()
-        proc.wait(timeout=5)
-    return 0
+    print(f"{label}:", body["choices"][0]["message"]["content"])
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

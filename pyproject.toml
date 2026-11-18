@@ -13,6 +13,7 @@ dev = [
     "llama-cpp-python>=0.3.0",
     "mypy>=1.0",
     "ruff>=0.11",
+    "openai>=3.55.0",
 ]
 
 [tool.mypy]
@@ -26,7 +27,7 @@ package = false
 line-length = 88
 
 [tool.ruff.lint]
-extend-select = ["I"]
+select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

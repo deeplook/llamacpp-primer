@@ -10,26 +10,20 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Run Bash smoke tests (mock server)
         run: bash tools/test.sh
 
-  pytest:
+  check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           python-version: "3.12"
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-groups --locked
 
-      - name: Install dependencies
-        run: uv sync --all-groups
-
-      - name: Run PyTest
-        run: uv run pytest -v
+      - run: make check-all

@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/deeplook/primer-llamacpp/actions/workflows/ci.yml/badge.svg)](https://github.com/deeplook/primer-llamacpp/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/deeplook/primer-llamacpp?logo=github)](LICENSE)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/deeplook)
 
 Small executable lessons for running and serving LLMs locally with llama.cpp.
 It complements `openai-primer` and `agents-primer`: those talk to a hosted API;
@@ -22,22 +23,61 @@ and a local RAG pipeline. The capstone composes server, tools, grammar, and
 RAG into one workflow. An appendix covers performance flags that are config
 knowledge rather than teachable spikes.
 
-Examples that need a GGUF skip cleanly when the file is missing, so the test
-suite stays offline and free. On a Mac with Ollama installed, `make list-models`
-discovers existing blobs automatically.
+Examples that need a GGUF skip cleanly when none is found, so the test suite
+stays offline and free. Every lesson resolves its model the same way
+(`examples/_common.py`): `$MODEL_PATH`, then `models/*.gguf`, then an installed
+Ollama (`make list-models` shows what it has).
 
 ## Setup
 
 ```bash
+brew install llama.cpp            # llama-cli, llama-server, llama-quantize
 uv sync --all-groups
-# optional: download a small GGUF, e.g. TinyLlama Q4_K_M from Hugging Face
-llama-server --model models/tinyllama.Q4_K_M.gguf --port 8080
-uv run python examples/06_server_basic.py
+make model-download               # Qwen2.5-0.5B-Instruct Q4_K_M, 398 MB, git-ignored
+make live-core                    # run the model-backed lessons for real
+make check-all                    # ruff + strict mypy + pytest (model tests skip without a GGUF)
+make hooks                        # optional: install the pre-commit hook
 ```
 
-`make setup` checks for `llama-server` and `llama-cli` on PATH and warns if
-they're absent — fine for CI, required for the live examples. `make check-all`
-runs formatting, the mock-backed smoke tests, and PyTest.
+`make check-model` verifies the pinned model (`bartowski/Qwen2.5-0.5B-Instruct-GGUF`,
+397,808,192 bytes) against the Hugging Face Hub. `make setup` checks for
+`llama-server` and `llama-cli` on PATH and only warns if they're absent, which
+is fine for CI.
+
+To run the CLI directly on Apple Silicon: `-ngl 99` offloads all layers to
+Metal, and `--single-turn` stops `llama-cli` from dropping into interactive
+mode after the reply:
+
+```bash
+llama-cli -m models/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf -ngl 99 \
+  -p "Reply with one word: primer" -n 8 --no-warmup --single-turn
+```
+
+Tool calling (lessons 13 and 20) needs `llama-server --jinja`; the lessons pass
+it for you. Embedding lessons (14, 15) additionally use a model with "embed" in
+its file name in `models/`; lesson 15 falls back to bag-of-words vectors
+without one, and lesson 19 needs a vision model plus its `-mmproj.gguf`.
+
+## Testing
+
+`make check-all` (`lint`, `typecheck`, `test`) needs no model and never modifies
+files; `make format` is the mutating counterpart. Without a GGUF the
+model-backed tests skip; what still runs is the mock server, a compile check of
+every lesson, the environment checks for 01 and 19, the RAG retrieval test, and
+lesson 15 end to end against the mock. CI runs `make check-all` on the locked environment, plus
+`tools/test.sh` (curl against the mock server).
+
+With a model in `models/`, pytest also runs the lessons for real. Generated
+text varies, so those tests assert structure, not wording: grammar and schema
+output must parse and have the right keys, greedy decoding must repeat, the
+tokenizer must round-trip, and for the pinned Qwen model the GGUF metadata must
+match exactly. `make live-core` runs the same lessons outside pytest.
+
+The optional pre-commit hook (`make hooks`) runs the generic file checks plus
+`make lint` and `make typecheck`, the same commands CI uses.
+
+Not covered by tests beyond compiling: 05, 07, 09, 10 and 14 (they need extra
+models, source trees, or port 8080).
 
 ## Modules
 
