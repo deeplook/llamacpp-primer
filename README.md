@@ -1,7 +1,7 @@
 # llama.cpp Primer
 
-[![CI](https://github.com/deeplook/primer-llamacpp/actions/workflows/ci.yml/badge.svg)](https://github.com/deeplook/primer-llamacpp/actions/workflows/ci.yml)
-[![License](https://img.shields.io/github/license/deeplook/primer-llamacpp?logo=github)](LICENSE)
+[![CI](https://github.com/deeplook/llamacpp-primer/actions/workflows/ci.yml/badge.svg)](https://github.com/deeplook/llamacpp-primer/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/deeplook/llamacpp-primer?logo=github)](LICENSE)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/deeplook)
 
 Small executable lessons for running and serving LLMs locally with llama.cpp.
@@ -23,10 +23,37 @@ and a local RAG pipeline. The capstone composes server, tools, grammar, and
 RAG into one workflow. An appendix covers performance flags that are config
 knowledge rather than teachable spikes.
 
+## Why this exists
+
+vLLM, the usual tool for serving LLMs (see
+[vllm-primer](https://github.com/deeplook/vllm-primer)), targets NVIDIA GPUs
+and has no Metal backend; on a Mac it runs at best as an experimental CPU build.
+llama.cpp runs natively on macOS and offloads to the Apple Silicon GPU through
+Metal, so a laptop is enough for every lesson here.
+
+Everything stays on your machine: no cloud account, no GPU instance billing by
+the hour, no API key, and no open ports, since `llama-server` listens on
+localhost only. The one download is a 398 MB quantized model, and CI does not
+even need that.
+
+The lessons build on each other, from the binaries and a first prompt to a
+capstone that combines server, tools, grammar and RAG. Each one is still a plain
+script you can run on its own.
+
 Examples that need a GGUF skip cleanly when none is found, so the test suite
 stays offline and free. Every lesson resolves its model the same way
 (`examples/_common.py`): `$MODEL_PATH`, then `models/*.gguf`, then an installed
 Ollama (`make list-models` shows what it has).
+
+```mermaid
+flowchart LR
+    Model["Model resolution<br/>1. MODEL_PATH<br/>2. models/*.gguf<br/>3. Ollama"] --> Lessons["Lessons"]
+    Model -.-> Skip["No GGUF: lesson skips"]
+    Lessons --> CLI["llama-cli<br/>shell, one prompt"]
+    Lessons --> Server["llama-server<br/>OpenAI-compatible HTTP on :8080"]
+    Lessons --> Py["llama-cpp-python<br/>in-process bindings"]
+    Server -.-> Mock["Mock server<br/>tools/, CI, no model"]
+```
 
 ## Setup
 
