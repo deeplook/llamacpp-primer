@@ -100,7 +100,7 @@ def test_context_window_runs():
 
 
 @requires_gguf
- def test_capstone_syntax():
+def test_capstone_syntax():
     """Capstone needs a live server and vision model; just verify it imports."""
     result = subprocess.run(
         [sys.executable, "-m", "py_compile", str(EXAMPLES / "20_capstone.py")],
